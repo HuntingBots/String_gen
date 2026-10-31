@@ -1,0 +1,167 @@
+# MIT License
+#
+# Copyright (c) 19-10-2026 @HuntingBots for MatrixVcBot
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+name: Telegram String Session Generator
+
+on:
+  workflow_dispatch:
+    inputs:
+      connection_method:
+        description: 'Connection Method'
+        type: choice
+        required: true
+        default: 'web_terminal'
+        options:
+          - 'web_terminal'
+          - 'ssh_upterm'
+          - 'both'
+      timeout_minutes:
+        description: 'Session Timeout in Minutes'
+        required: false
+        default: '15'
+        type: string
+      api_id:
+        description: 'Telegram API ID (Optional - or leave blank to enter in terminal)'
+        required: false
+        default: ''
+        type: string
+      api_hash:
+        description: 'Telegram API HASH (Optional - or leave blank to enter in terminal)'
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  generate-session:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install telethon pyrofork tgcrypto
+          # Install official pyrogram in isolated path for Pyrogram option
+          sudo mkdir -p /opt/pyrogram_official
+          sudo pip install --target /opt/pyrogram_official pyrogram tgcrypto
+
+      - name: Install Web Terminal Tools (ttyd & cloudflared)
+        if: ${{ github.event.inputs.connection_method == 'web_terminal' || github.event.inputs.connection_method == 'both' || github.event_name != 'workflow_dispatch' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ttyd curl openssl
+          curl -sL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared
+          chmod +x /usr/local/bin/cloudflared
+
+      - name: Start Web Terminal (Browser Access)
+        if: ${{ github.event.inputs.connection_method == 'web_terminal' || github.event.inputs.connection_method == 'both' || github.event_name != 'workflow_dispatch' }}
+        env:
+          API_ID: ${{ github.event.inputs.api_id || secrets.API_ID }}
+          API_HASH: ${{ github.event.inputs.api_hash || secrets.API_HASH }}
+        run: |
+          # Create terminal startup wrapper
+          cat << 'EOF' > /tmp/run_session.sh
+          #!/usr/bin/env bash
+          cd "$GITHUB_WORKSPACE"
+          python3 main.py
+          echo ""
+          echo "=========================================================="
+          echo "✅ Execution finished! You can close this browser tab."
+          echo "=========================================================="
+          touch /tmp/session_done
+          exec bash
+          EOF
+          chmod +x /tmp/run_session.sh
+
+          WEB_USER="admin"
+          WEB_PASS=$(openssl rand -hex 8)
+
+          # Launch ttyd web terminal on port 7681
+          ttyd -p 7681 -c "${WEB_USER}:${WEB_PASS}" bash /tmp/run_session.sh &
+          sleep 2
+
+          # Launch cloudflared tunnel
+          cloudflared tunnel --url http://localhost:7681 --logfile /tmp/cf_tunnel.log &
+
+          echo "Waiting for Cloudflare Tunnel URL..."
+          URL=""
+          for i in {1..30}; do
+            if grep -q "trycloudflare.com" /tmp/cf_tunnel.log 2>/dev/null; then
+              URL=$(grep -oE "https://[a-zA-Z0-9.-]+\.trycloudflare\.com" /tmp/cf_tunnel.log | head -n 1)
+              break
+            fi
+            sleep 2
+          done
+
+          if [ -z "$URL" ]; then
+            echo "❌ Failed to obtain Cloudflare Tunnel URL. Tunnel logs:"
+            cat /tmp/cf_tunnel.log
+            exit 1
+          fi
+
+          echo "===================================================================="
+          echo "🚀 WEB TERMINAL IS READY!"
+          echo "👉 OPEN THIS URL IN YOUR BROWSER:"
+          echo "🔗 $URL"
+          echo "👤 Username: $WEB_USER"
+          echo "🔑 Password: $WEB_PASS"
+          echo "===================================================================="
+
+          # Output to GitHub Actions Run Summary
+          echo "## 🚀 Telegram String Session Generator" >> $GITHUB_STEP_SUMMARY
+          echo "### 🌐 Web Terminal Access" >> $GITHUB_STEP_SUMMARY
+          echo "Click the link below to open the interactive session generator directly in your browser (works on mobile, tablet, and PC):" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **🔗 Web Terminal URL:** [$URL]($URL)" >> $GITHUB_STEP_SUMMARY
+          echo "- **👤 Username:** \`$WEB_USER\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **🔑 Password:** \`$WEB_PASS\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> 💡 **How it works:** Open the URL, enter the login credentials above, and follow the on-screen prompts to log into Telegram and generate your string session!" >> $GITHUB_STEP_SUMMARY
+
+          # If only web_terminal is used, wait for session completion or timeout
+          if [ "${{ github.event.inputs.connection_method }}" != "both" ]; then
+            TIMEOUT_MIN=${{ github.event.inputs.timeout_minutes || '15' }}
+            echo "⏳ Session will remain active for up to $TIMEOUT_MIN minutes..."
+            END_TIME=$((SECONDS + TIMEOUT_MIN * 60))
+            while [ $SECONDS -lt $END_TIME ]; do
+              if [ -f /tmp/session_done ]; then
+                echo "✅ Session generation completed! Keeping active for 60 seconds before closing..."
+                sleep 60
+                break
+              fi
+              sleep 5
+            done
+          fi
+
+      - name: Setup SSH Terminal (Upterm)
+        if: ${{ github.event.inputs.connection_method == 'ssh_upterm' || github.event.inputs.connection_method == 'both' }}
+        uses: owenthereal/action-upterm@v2
+        with:
+          limit-access-to-actor: false
