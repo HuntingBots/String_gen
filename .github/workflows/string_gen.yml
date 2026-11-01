@@ -1,24 +1,5 @@
 # MIT License
-#
 # Copyright (c) 19-10-2026 @HuntingBots for MatrixVcBot
-#
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
 
 name: Telegram String Session Generator
 
@@ -40,12 +21,17 @@ on:
         default: '15'
         type: string
       api_id:
-        description: 'Telegram API ID (Optional - or leave blank to enter in terminal)'
+        description: 'Telegram API ID (Optional)'
         required: false
         default: ''
         type: string
       api_hash:
-        description: 'Telegram API HASH (Optional - or leave blank to enter in terminal)'
+        description: 'Telegram API HASH (Optional)'
+        required: false
+        default: ''
+        type: string
+      old_string_session:
+        description: 'Old String Session (Optional for Option 4)'
         required: false
         default: ''
         type: string
@@ -58,6 +44,8 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
 
       - name: Setup Python 3.11
         uses: actions/setup-python@v5
@@ -68,7 +56,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip setuptools wheel
           pip install telethon pyrofork tgcrypto
-          # Install official pyrogram in isolated path for Pyrogram option
           sudo mkdir -p /opt/pyrogram_official
           sudo pip install --target /opt/pyrogram_official pyrogram tgcrypto
 
@@ -77,14 +64,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y curl openssl psmisc
-          # Stop and disable system ttyd service if present to avoid port conflicts
           sudo systemctl stop ttyd 2>/dev/null || true
           sudo systemctl disable ttyd 2>/dev/null || true
           sudo pkill -9 -x ttyd 2>/dev/null || true
-          # Install official standalone static ttyd binary (does not create system daemon)
           curl -sL https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64 -o /usr/local/bin/ttyd
           chmod +x /usr/local/bin/ttyd
-          # Install official cloudflared binary
           curl -sL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared
           chmod +x /usr/local/bin/cloudflared
 
@@ -93,8 +77,8 @@ jobs:
         env:
           API_ID: ${{ github.event.inputs.api_id || secrets.API_ID }}
           API_HASH: ${{ github.event.inputs.api_hash || secrets.API_HASH }}
+          OLD_STRING_SESSION: ${{ github.event.inputs.old_string_session }}
         run: |
-          # Create terminal startup wrapper
           cat << 'EOF' > /tmp/run_session.sh
           #!/usr/bin/env bash
           cd "$GITHUB_WORKSPACE"
@@ -108,7 +92,6 @@ jobs:
           EOF
           chmod +x /tmp/run_session.sh
 
-          # Ensure port 7681 is completely free
           sudo systemctl stop ttyd 2>/dev/null || true
           sudo systemctl disable ttyd 2>/dev/null || true
           sudo fuser -k 7681/tcp 2>/dev/null || true
@@ -118,19 +101,16 @@ jobs:
           WEB_USER="admin"
           WEB_PASS=$(openssl rand -hex 8)
 
-          # Launch ttyd web terminal with writable option (-W) on port 7681
           ttyd -W -p 7681 -c "${WEB_USER}:${WEB_PASS}" bash /tmp/run_session.sh > /tmp/ttyd.log 2>&1 &
           TTYD_PID=$!
           sleep 2
 
-          # Verify ttyd started successfully
           if ! kill -0 $TTYD_PID 2>/dev/null; then
             echo "❌ ttyd failed to start. Logs:"
             cat /tmp/ttyd.log
             exit 1
           fi
 
-          # Launch cloudflared tunnel
           cloudflared tunnel --url http://127.0.0.1:7681 --logfile /tmp/cf_tunnel.log --no-autoupdate > /dev/null 2>&1 &
           CF_PID=$!
 
@@ -163,18 +143,15 @@ jobs:
           echo "🔑 Password: $WEB_PASS"
           echo "===================================================================="
 
-          # Output to GitHub Actions Run Summary
           echo "## 🚀 Telegram String Session Generator" >> $GITHUB_STEP_SUMMARY
           echo "### 🌐 Web Terminal Access" >> $GITHUB_STEP_SUMMARY
-          echo "Click the link below to open the interactive session generator directly in your browser (works on mobile, tablet, and PC):" >> $GITHUB_STEP_SUMMARY
+          echo "Click the link below to open the interactive session generator directly in your browser:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **🔗 Web Terminal URL:** [$URL]($URL)" >> $GITHUB_STEP_SUMMARY
           echo "- **👤 Username:** \`$WEB_USER\`" >> $GITHUB_STEP_SUMMARY
           echo "- **🔑 Password:** \`$WEB_PASS\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "> 💡 **How it works:** Open the URL, enter the login credentials above, and follow the on-screen prompts to log into Telegram and generate your string session!" >> $GITHUB_STEP_SUMMARY
 
-          # If only web_terminal is used, wait for session completion or timeout
           if [ "${{ github.event.inputs.connection_method }}" != "both" ]; then
             TIMEOUT_MIN=${{ github.event.inputs.timeout_minutes || '15' }}
             echo "⏳ Session will remain active for up to $TIMEOUT_MIN minutes..."
