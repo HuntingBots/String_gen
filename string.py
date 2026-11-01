@@ -24,13 +24,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-"""
-Compatibility shim for string.py
-If imported as standard library 'string', delegates to python stdlib 'string'.
-If run directly, executes the String Session Generator.
-Author: @HuntingBots for MatrixVcBot
-"""
-
 import sys
 import os
 

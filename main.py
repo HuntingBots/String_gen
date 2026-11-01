@@ -24,11 +24,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-"""
-Entry point for Telegram String Session Generator
-Author: @HuntingBots for MatrixVcBot
-"""
-
 from generate import main
 
 if __name__ == "__main__":

@@ -8,10 +8,11 @@ You can run this generator directly via **GitHub Actions** (directly from your b
 
 ## ✨ Features
 
-- 🚀 **3-in-1 Framework Support:**
+- 🚀 **Multi-Framework & Direct Migration Support:**
   - **Pyrogram** (Official v2)
   - **Pyrofork** (Modern, actively maintained Pyrogram fork)
   - **Telethon** (Telethon v1)
+  - **Direct Old -> New Session Generation (Option 4)**: Convert/Regenerate directly from an old string session without phone number or OTP!
 - 🌐 **GitHub Actions Ready:**
   - **Web Terminal:** Open an interactive shell directly in your web browser (supports mobile & desktop) via Cloudflare Quick Tunnel — **no SSH keys needed!**
   - **SSH Terminal:** Connect via SSH using Upterm if you prefer local terminal debugging.
@@ -45,7 +46,7 @@ You don't need to install Python or clone the repository to your device. You can
 3. Click the URL to open the terminal in your browser.
 4. Log in with the username and password provided.
 5. Follow the on-screen prompts:
-   - Choose your framework: `1` for Pyrogram, `2` for Pyrofork, `3` for Telethon.
+   - Choose your option: `1` for Pyrogram, `2` for Pyrofork, `3` for Telethon, or `4` to generate directly from an old string session without OTP.
    - Enter your **API ID** and **API HASH** (obtainable from [my.telegram.org](https://my.telegram.org)).
    - Enter your **phone number** with country code (e.g. `+919876543210`).
    - Enter the **OTP login code** sent to your Telegram app.
